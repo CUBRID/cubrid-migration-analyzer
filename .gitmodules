@@ -1,0 +1,3 @@
+[submodule "submodule/cubrid-migration"]
+	path = submodule/cubrid-migration
+	url = https://github.com/CUBRID/cubrid-migration.git

@@ -1,0 +1,363 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.cubrid</groupId>
+	<artifactId>migration-analyzer</artifactId>
+	<version>1.0.0</version>
+  
+	<properties>
+			<java.version>21</java.version>
+			<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+			<version.compiler.plugin>3.13.0</version.compiler.plugin>
+			<version.dependency.plugin>3.7.1</version.dependency.plugin>
+			<version.surefire.plugin>3.3.1</version.surefire.plugin>
+			<cubrid.jdbc.version>11.3.2.0053</cubrid.jdbc.version>
+			<dist.dir>${project.build.directory}/analyzer</dist.dir>
+			<cmt.version>1.0.0-SNAPSHOT</cmt.version>
+			<pl.server.jar>${project.basedir}/pl_server/pl_server.jar</pl.server.jar>
+			<jre.version>21.0.12_8</jre.version>
+			<jre.release>jdk-21.0.12%2B8</jre.release>
+			<jre.archive>OpenJDK21U-jre_x64_linux_hotspot_${jre.version}.tar.gz</jre.archive>
+			<jre.download.url>https://github.com/adoptium/temurin21-binaries/releases/download/${jre.release}/${jre.archive}</jre.download.url>
+			<jre.sha256>8a379a67c91a3ae61ffb33d46e0a40c7ba35e70713c4db31cfca30492f792eff</jre.sha256>
+	</properties>
+	<build>
+		<finalName>analyzer</finalName>
+		<sourceDirectory>src</sourceDirectory>
+			<resources>
+				<resource>
+					<directory>src</directory>
+					<excludes>
+						<exclude>**/*.java</exclude>
+						<exclude>dist/**</exclude>
+					</excludes>
+				</resource>
+				<resource>
+					<directory>.</directory>
+					<includes>
+						<include>logback.xml</include>
+					</includes>
+				</resource>
+			</resources>
+		
+		<testSourceDirectory>test</testSourceDirectory>
+			<testResources>
+				<testResource>
+					<directory>test</directory>
+					<excludes>
+						<exclude>**/*.java</exclude>
+					</excludes>
+				</testResource>
+			</testResources>
+		
+		<plugins>
+			<!--
+				LICENSE BOUNDARY: runtime dependencies must remain separate,
+				replaceable JARs under lib/. Do not add shade/assembly/uber-JAR
+				packaging that merges Lanterna, Logback, JExcelApi, or other
+				third-party classes into analyzer.jar.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<version>3.6.3</version>
+				<executions>
+					<execution>
+						<id>ban-fat-jar-plugins</id>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<bannedPlugins>
+									<excludes>
+										<exclude>org.apache.maven.plugins:maven-shade-plugin</exclude>
+										<exclude>org.apache.maven.plugins:maven-assembly-plugin</exclude>
+									</excludes>
+								</bannedPlugins>
+							</rules>
+							<fail>true</fail>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>3.4.2</version>
+				<configuration>
+					<outputDirectory>${dist.dir}</outputDirectory>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<version>${version.dependency.plugin}</version>
+				<executions>
+					<execution>
+						<id>copy-runtime-dependencies</id>
+						<phase>package</phase>
+						<goals>
+							<goal>copy-dependencies</goal>
+						</goals>
+							<configuration>
+								<includeScope>runtime</includeScope>
+								<excludeArtifactIds>cubrid-jdbc</excludeArtifactIds>
+								<outputDirectory>${dist.dir}/lib</outputDirectory>
+							</configuration>
+						</execution>
+						<execution>
+							<id>copy-cubrid-jdbc-driver</id>
+							<phase>package</phase>
+							<goals>
+								<goal>copy</goal>
+							</goals>
+							<configuration>
+								<artifactItems>
+									<artifactItem>
+										<groupId>org.cubrid</groupId>
+										<artifactId>cubrid-jdbc</artifactId>
+										<version>${cubrid.jdbc.version}</version>
+										<type>jar</type>
+										<outputDirectory>${dist.dir}/jdbc</outputDirectory>
+									</artifactItem>
+								</artifactItems>
+							</configuration>
+						</execution>
+				</executions>
+			</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-compiler-plugin</artifactId>
+						<version>${version.compiler.plugin}</version>
+						<configuration>
+							<release>${java.version}</release>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-antrun-plugin</artifactId>
+						<version>3.1.0</version>
+						<executions>
+						<execution>
+								<id>prepare-dist</id>
+								<phase>prepare-package</phase>
+							<goals>
+								<goal>run</goal>
+							</goals>
+							<configuration>
+								<target>
+									<delete dir="${dist.dir}"/>
+									<mkdir dir="${dist.dir}/jni"/>
+									<mkdir dir="${dist.dir}/lib"/>
+									<mkdir dir="${dist.dir}/settings"/>
+									<mkdir dir="${dist.dir}/sqlmap"/>
+									<copy file="${project.basedir}/jni/libsqlvalidator.so"
+										todir="${dist.dir}/jni"/>
+									<copy file="${project.basedir}/src/dist/analyzer.sh"
+										todir="${dist.dir}"/>
+									<copy file="${project.basedir}/src/dist/settings/setting.conf"
+										todir="${dist.dir}/settings"/>
+									<copy file="${project.basedir}/src/dist/settings/cost.json"
+										todir="${dist.dir}/settings"/>
+									<copy file="${project.basedir}/src/dist/settings/logback.xml"
+										todir="${dist.dir}/settings"/>
+									<copy file="${project.basedir}/LICENSE"
+										todir="${dist.dir}"/>
+									<copy file="${project.basedir}/NOTICE"
+										todir="${dist.dir}"/>
+									<copy file="${project.basedir}/THIRD-PARTY-NOTICES.md"
+										todir="${dist.dir}"/>
+									<copy todir="${dist.dir}/licenses">
+										<fileset dir="${project.basedir}/licenses"/>
+									</copy>
+									<available file="${pl.server.jar}" property="pl.server.jar.exists"/>
+									<fail unless="pl.server.jar.exists"
+										message="pl_server jar is missing: ${pl.server.jar}"/>
+									<copy file="${pl.server.jar}"
+										tofile="${dist.dir}/lib/pl_server.jar"/>
+									<chmod file="${dist.dir}/analyzer.sh" perm="755"/>
+									<chmod file="${dist.dir}/jni/libsqlvalidator.so" perm="755"/>
+								</target>
+							</configuration>
+						</execution>
+						<execution>
+							<id>prepare-bundled-jre</id>
+							<phase>prepare-package</phase>
+							<goals>
+								<goal>run</goal>
+							</goals>
+							<configuration>
+								<target>
+									<get src="${jre.download.url}"
+										dest="${project.build.directory}/${jre.archive}"
+										usetimestamp="true"
+										retries="3"/>
+									<checksum file="${project.build.directory}/${jre.archive}"
+										algorithm="SHA-256"
+										property="jre.checksum.actual"/>
+									<condition property="jre.checksum.valid">
+										<equals arg1="${jre.checksum.actual}" arg2="${jre.sha256}"/>
+									</condition>
+									<fail unless="jre.checksum.valid"
+										message="Downloaded JRE checksum does not match ${jre.sha256}"/>
+									<untar src="${project.build.directory}/${jre.archive}"
+										dest="${dist.dir}"
+										compression="gzip">
+										<mapper type="regexp" from="^[^/]+/(.*)$" to="jre/\1"/>
+									</untar>
+									<chmod perm="755">
+										<fileset dir="${dist.dir}/jre/bin" includes="**/*"/>
+									</chmod>
+									<chmod file="${dist.dir}/jre/lib/jexec" perm="755"/>
+									<chmod file="${dist.dir}/jre/lib/jspawnhelper" perm="755"/>
+								</target>
+							</configuration>
+						</execution>
+						<execution>
+							<id>package-linux-distribution</id>
+							<phase>package</phase>
+							<goals>
+								<goal>run</goal>
+							</goals>
+							<configuration>
+								<target>
+									<tar destfile="${project.build.directory}/sql-analyzer-${project.version}-linux-x86_64.tar.gz"
+										compression="gzip"
+										longfile="gnu">
+										<tarfileset dir="${dist.dir}"
+											prefix="sql-analyzer-${project.version}"
+											filemode="0644"
+											dirmode="0755">
+											<exclude name="analyzer.sh"/>
+											<exclude name="jni/libsqlvalidator.so"/>
+											<exclude name="jre/bin/**"/>
+											<exclude name="jre/lib/jexec"/>
+											<exclude name="jre/lib/jspawnhelper"/>
+											<exclude name="LICENSE"/>
+											<exclude name="NOTICE"/>
+											<exclude name="THIRD-PARTY-NOTICES.md"/>
+											<exclude name="licenses/**"/>
+										</tarfileset>
+										<tarfileset dir="${dist.dir}"
+											prefix="sql-analyzer-${project.version}"
+											filemode="0644"
+											dirmode="0755">
+											<include name="LICENSE"/>
+											<include name="NOTICE"/>
+											<include name="THIRD-PARTY-NOTICES.md"/>
+											<include name="licenses/**"/>
+										</tarfileset>
+										<tarfileset dir="${dist.dir}"
+											prefix="sql-analyzer-${project.version}"
+											filemode="0755"
+											dirmode="0755">
+											<include name="analyzer.sh"/>
+											<include name="jni/libsqlvalidator.so"/>
+											<include name="jre/bin/**"/>
+											<include name="jre/lib/jexec"/>
+											<include name="jre/lib/jspawnhelper"/>
+										</tarfileset>
+									</tar>
+								</target>
+							</configuration>
+						</execution>
+					</executions>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-surefire-plugin</artifactId>
+					<version>${version.surefire.plugin}</version>
+					<configuration>
+						<useModulePath>false</useModulePath>
+						<argLine>-Djava.library.path=${project.basedir}/jni</argLine>
+					</configuration>
+				</plugin>
+		</plugins>
+	</build>
+	<repositories>
+		<repository>
+			<id>sqlanalyzer-local-artifacts</id>
+			<url>file://${project.basedir}/lib/m2repo</url>
+		</repository>
+	</repositories>
+	<profiles>
+		<profile>
+			<id>dev-prebuilt-artifacts</id>
+		</profile>
+	</profiles>
+	<dependencies>
+	    <dependency>
+	        <groupId>com.cubrid.cubridmigration</groupId>
+	        <artifactId>com.cubrid.cubridmigration.core</artifactId>
+	        <version>${cmt.version}</version>
+	    </dependency>
+	    
+	    <dependency>
+	        <groupId>com.cubrid.cubridmigration</groupId>
+	        <artifactId>com.cubrid.common.configuration</artifactId>
+	        <version>${cmt.version}</version>
+	    </dependency>
+
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-lang3</artifactId>
+			<version>3.18.0</version>
+		</dependency>
+
+	    <dependency>
+	        <groupId>com.beust</groupId>
+	        <artifactId>jcommander</artifactId>
+	        <version>1.82</version>
+	    </dependency>
+
+		<dependency>
+		    <groupId>org.mybatis</groupId>
+		    <artifactId>mybatis</artifactId>
+		    <version>3.5.19</version>
+		</dependency>
+		
+			<dependency>
+				<groupId>org.cubrid</groupId>
+				<artifactId>cubrid-jdbc</artifactId>
+				<version>${cubrid.jdbc.version}</version>
+			</dependency>
+		
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-api</artifactId>
+			<version>2.0.17</version>
+		</dependency>
+		<dependency>
+			<groupId>ch.qos.logback</groupId>
+			<artifactId>logback-classic</artifactId>
+			<version>1.5.18</version>
+		</dependency>
+		<dependency>
+			<groupId>ch.qos.logback</groupId>
+			<artifactId>logback-core</artifactId>
+			<version>1.5.18</version>
+		</dependency>
+		<dependency>
+			<groupId>org.mongodb</groupId>
+			<artifactId>bson</artifactId>
+			<version>5.6.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.googlecode.lanterna</groupId>
+			<artifactId>lanterna</artifactId>
+			<version>3.1.2</version>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-api</artifactId>
+			<version>5.11.4</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<version>5.11.4</version>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+</project>
